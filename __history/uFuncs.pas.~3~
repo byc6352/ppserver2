@@ -1,0 +1,19 @@
+unit uFuncs;
+
+interface
+uses
+   System.SysUtils,windows;
+   function getDateTimeString(dt:tdatetime;formatType:ansiString):ansiString;
+implementation
+function getDateTimeString(dt:tdatetime;formatType:ansiString):ansiString;
+const
+  TIME_STR='yyyy-mm-dd hh:nn:ss';
+  FILE_STR='yyyymmddhhnnsszzz';
+begin
+try
+  result:=FormatDateTime(formatType,dt);
+finally
+
+end;
+end;
+end.

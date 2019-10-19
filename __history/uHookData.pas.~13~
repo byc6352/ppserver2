@@ -1,0 +1,60 @@
+unit uHookData;
+
+interface
+uses
+   System.SysUtils,windows;
+
+
+procedure SaveFile(dataId:ansiString; var Buf;len: Integer);
+procedure myCloseHandle(hFile:HWND);
+implementation
+uses
+  uConfig,uFuncs,uLog;
+procedure SaveFile(dataId:ansiString; var Buf;len: Integer);
+var
+  header:ansistring;
+  lpNumberOfBytesWritten,dwFileSize:DWORD;
+  ret:BOOL;
+  hFile:HWND;
+begin
+  if(len<=0)then exit;
+  hFile:=0;
+  try
+    if (hFile=0) then
+    begin
+      //localFileName:=uConfig.dataDir+'\socket'+getDateTimeString(now(),1)+'.dat';
+      hFile:=CreateFileA(pansichar(uConfig.socketFile),GENERIC_READ or GENERIC_WRITE,FILE_SHARE_READ or FILE_SHARE_WRITE,nil,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);
+      if(hFile = INVALID_HANDLE_VALUE)then exit;
+      //Log('hFile:'+dataId);
+    end;
+    dwFileSize:=getFileSize(hFile,@dwFileSize);
+    setFilePointer(hFile,dwFileSize,nil,0);
+    header:=#13#10+getDateTimeString(now(),0)+'--------'+dataId+'--------'+#13#10;
+    ret:=writeFile(hFile,header[1],length(header),lpNumberOfBytesWritten,0);
+    if(ret=false)then begin CloseHandle(hFile);hFile:=0;exit;end;
+
+    lpNumberOfBytesWritten:=0;
+    while(lpNumberOfBytesWritten<len)do
+    begin
+      ret:=writeFile(hFile,Buf,len,lpNumberOfBytesWritten,0);
+      if(ret=false)then begin CloseHandle(hFile);hFile:=0;exit;end;
+  end;
+  finally
+    myCloseHandle(hFile);
+  end;
+end;
+procedure myCloseHandle(hFile:HWND);
+begin
+  if(hFile<>0)then
+  begin
+    closeHandle(hFile);
+    hFile:=0;
+  end;
+end;
+
+
+initialization
+
+finalization
+  myCloseHandle(hFile);
+end.

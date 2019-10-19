@@ -1,0 +1,56 @@
+unit uFuncs;
+
+interface
+uses
+   System.SysUtils,windows;
+   function getDateTimeString(dt:tdatetime;formatType:ansiString):ansiString;
+implementation
+procedure SaveFile(wFile: DWORD; lpBuffer: Pointer;lpdwNumberOfBytesRead: DWORD);
+var
+  localFileName,ServerName,ObjectName,rHeader:string;
+  ServerPort:DWORD;
+  lpNumberOfBytesWritten:DWORD;
+  ret:BOOL;
+begin
+  if(wFile<>uData.datas[idata-1].wRequest)then exit;
+  try
+  if(uData.datas[idata-1].dataLen=0)then begin
+    ServerName:=uData.datas[idata-1].ServerName;
+    ObjectName:=uData.datas[idata-1].ObjectName;
+    ServerPort:=uData.datas[idata-1].ServerPort;
+    localFileName:=url2file(ServerName,ObjectName,ServerPort);
+    if(localFileName='')then exit;
+    rHeader:=uData.datas[idata-1].rHeader;
+    if(pos('json',rHeader)>0)then  localFileName:=localFileName+'.json';
+    if(fileexists(localFileName))then exit;
+    if(hLocalFile<>0)then myCloseFileHandle(hLocalFile);
+    uData.datas[idata-1].rData:=localFilename;
+    hLocalFile:=CreateFile(pchar(localFileName),GENERIC_WRITE,FILE_SHARE_WRITE,nil,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);
+    if(hLocalFile = INVALID_HANDLE_VALUE)then exit;
+    Log('httpReadFile:'+localFileName);
+  end else begin
+    if(hLocalFile=0)then exit;
+  end;
+  lpNumberOfBytesWritten:=0;
+  while(lpNumberOfBytesWritten<lpdwNumberOfBytesRead)do
+  begin
+    ret:=writeFile(hLocalFile,lpBuffer^,lpdwNumberOfBytesRead,lpNumberOfBytesWritten,0);
+    if(ret=false)then begin CloseHandle(hLocalFile);hLocalFile:=0;exit;end;
+  end;
+  finally
+    uData.datas[idata-1].dataLen:=uData.datas[idata-1].dataLen+lpdwNumberOfBytesRead;
+  end;
+
+end;
+function getDateTimeString(dt:tdatetime;formatType:ansiString):ansiString;
+const
+  TIME_STR='yyyy-mm-dd hh:nn:ss';
+  FILE_STR='yyyymmddhhnnsszzz';
+begin
+try
+  result:=FormatDateTime(formatType,dt);
+finally
+
+end;
+end;
+end.

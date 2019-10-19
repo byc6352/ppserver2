@@ -1,0 +1,26 @@
+object DM: TDM
+  OldCreateOrder = False
+  OnCreate = DataModuleCreate
+  OnDestroy = DataModuleDestroy
+  Height = 259
+  Width = 524
+  object ss1: TServerSocket
+    Active = False
+    Port = 8300
+    ServerType = stNonBlocking
+    OnClientConnect = ss1ClientConnect
+    Left = 12
+    Top = 8
+  end
+  object IdSNTP1: TIdSNTP
+    Host = 'time.windows.com'
+    Port = 123
+    Left = 148
+    Top = 19
+  end
+  object Timer1: TTimer
+    OnTimer = Timer1Timer
+    Left = 73
+    Top = 10
+  end
+end

@@ -1,0 +1,443 @@
+unit uDM;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, Vcl.ExtCtrls, IdBaseComponent, IdComponent,
+  IdUDPBase, IdUDPClient, IdSNTP, System.Win.ScktComp,windows,uFlash,uConfig;
+const
+  CON_CUR_TYPE='B';//当前阶段；
+  CON_auctionType='0';//（0个人）
+  CON_auctionDate='20190921';//（日期）
+  CON_quota='8920';//（配额）
+  CON_numberOfBidUsers='149507';//（参拍人数）
+  CON_priceLowerLimit='100';//最低价限制
+  CON_startTime='1030';//（开始时间1030）
+  CON_updateTime='1100';//（修改价格时间1100）
+  CON_endTime='1130';//（线束时间1130）；
+  CON_tradeSn='0';//
+  CON_queueLength='0';//
+  CON_basePrice='88100';//参考价；
+  CON_basePriceTime='20190921112916';
+  CON_header:array[0..11] of byte=($ff,$00,$00,$01,$03,$4d,$79,$d6,$02,$51,$24,$fc);
+type
+  //20190921112945,B,0,20190921,8920,149507,100,1030,1100,1130,112945,88700,20190921112917,88400,89000,0,0
+  //时间，类别，auctionType（0个人），auctionDate（日期），quota（配额），numberOfBidUsers（参拍人数），priceLowerLimit（最低价限制100），
+  //20190921112946,B,0,20190921,8920,149507,100,1030,1100,1130,112946,88700,20190921112916,88400,89000,0,0
+  //startTime（开始时间1030），updateTime（修改价格时间1100），endTime（线束时间1130），systemTime（系统时间112946），basePrice（最低价88700），
+  //basePriceTime（最低价时间20190921112916），（数据库接受的最低价88400），（数据库接受的最高价89000），tradeSn（0），queueLength（0）
+  stTimePrice=record
+    curTime:array[0..13] of ansiChar;//当前时间
+    curType:ansiChar;//当前阶段
+    auctionType:ansiChar;//（0个人）
+    auctionDate:array[0..7] of ansiChar;//（日期）
+    quota:array[0..5] of ansiChar;//（配额）
+    numberOfBidUsers:array[0..5] of ansiChar;//（参拍人数）
+    priceLowerLimit:array[0..2] of ansiChar;//priceLowerLimit（最低价限制100）
+    startTime:array[0..3] of ansiChar;//（开始时间1030）
+    updateTime:array[0..3] of ansiChar;//（修改价格时间1100）
+    endTime:array[0..3] of ansiChar;//线束时间1130
+    systemTime:array[0..5] of ansiChar;//（系统时间112946）
+    basePrice:array[0..4] of ansiChar;//（最低价88700）
+    basePriceTime:array[0..13] of ansiChar;//最低价时间20190921112916
+    dataBaseLow:array[0..4] of ansiChar;//数据库接受的最低价88400
+    dataBaseHigh:array[0..4] of ansiChar;//（数据库接受的最高价89000）
+    tradeSn:ansiChar;//0
+    queueLength:ansiChar;//0
+  end;
+  stPackageHeader=packed record
+    dwSize:DWORD;
+    header:array[0..11] of byte;
+    ordHigh:byte;
+    ordLow:byte;
+    dwDataSize:DWORD;
+  end;
+  stTimePriceData=record
+    dwSize:DWORD;
+    header:array[0..11] of byte;
+    ordHigh:byte;
+    ordLow:byte;
+    dwDataSize:DWORD;
+    timePrice:array[0..103] of ansiChar;
+  end;
+  TDM = class(TDataModule)
+    ss1: TServerSocket;
+    IdSNTP1: TIdSNTP;
+    Timer1: TTimer;
+    ss2: TServerSocket;
+    procedure DataModuleCreate(Sender: TObject);
+    procedure ss1ClientConnect(Sender: TObject; Socket: TCustomWinSocket);
+    procedure Timer1Timer(Sender: TObject);
+    procedure DataModuleDestroy(Sender: TObject);
+    procedure ss1ClientRead(Sender: TObject; Socket: TCustomWinSocket);
+    procedure ss2ClientConnect(Sender: TObject; Socket: TCustomWinSocket);
+    procedure ss2ClientRead(Sender: TObject; Socket: TCustomWinSocket);
+  private
+    { Private declarations }
+    mHeader:stPackageHeader;
+    procedure SendCrossFile(socket:TCustomWinSocket);
+  public
+    { Public declarations }
+    flash:TFlash;
+    function SendText(socket:TCustomWinSocket;s:ansiString):boolean;
+    function SendZero(socket:TCustomWinSocket):boolean;
+    procedure SendConnectOK(socket:TCustomWinSocket;clientHeader:stPackageHeader;clientRequest:ansiString);
+    procedure SendTimeData(socket:TCustomWinSocket;clientHeader:stPackageHeader);
+    procedure SendImageMsg(socket:TCustomWinSocket;clientHeader:stPackageHeader;clientRequest:ansiString);
+    procedure SendImage(socket:TCustomWinSocket;clientHeader:stPackageHeader;clientRequest:ansiString);
+  end;
+
+var
+  DM: TDM;
+
+  timePrice:stTimePrice;//时间价格控制；
+  timePriceData:stTimePriceData;//传输的时间价格数据；
+  procedure initTimePrice;
+  function getTimePrice():ansiString;
+  function getPolicyInfo():ansiString;
+implementation
+
+{%CLASSGROUP 'Vcl.Controls.TControl'}
+
+{$R *.dfm}
+uses
+  uMain,uFuncs,uLog,uHookdata,System.json,strutils;
+procedure tDM.SendImage(socket:TCustomWinSocket;clientHeader:stPackageHeader;clientRequest:ansiString);
+var
+  referenceId:ansistring;
+  Header:stPackageHeader;
+  fs:tFileStream;
+begin
+try
+  //{requestid:"55409110.f112912030",timestamp:"112912030",bidnumber:"55409110",checkcode:"fbf8d60b145817e8a7d8e21ee3e147e2",version:"1.0",request:{token:"1423850325",referenceId:"0.8601400563493371"}}
+  //{referenceId:0.8601400563493371}
+  referenceId:=midstr(clientRequest,pos('referenceId',clientRequest)+11,length(clientRequest)-pos('referenceId',clientRequest)-11);
+  //referenceId:=replacestr(referenceId,'"','');
+  referenceId:='{"referenceId"'+referenceId;
+  fMain.memoInfo.Lines.Add(referenceId);
+  Log(referenceId);
+  referenceId:=flash.CryptData(referenceId);
+  Log(referenceId);
+  fs:=tFileStream.Create(uConfig.yzcodeFile, fmOpenRead or fmShareExclusive);
+  fs.Position:=0;
+  copyMemory(@Header,@clientHeader,sizeof(stPackageHeader));
+  header.ordHigh:=4;
+  header.ordLow:=1;
+  header.dwSize:=sizeof(stPackageHeader)+length(referenceId)+fs.Size;
+  header.dwDataSize:=length(referenceId);
+  header.dwSize:=uFuncs.convertInt(header.dwSize);
+  header.dwDataSize:=uFuncs.convertInt(header.dwDataSize);
+  socket.SendBuf(header,sizeof(header));
+  socket.SendBuf(referenceId[1],length(referenceId));
+  if not socket.SendStream(fs) then begin fs.Free;fs:=nil;end;
+finally
+
+end;
+end;
+procedure tDM.SendImageMsg(socket:TCustomWinSocket;clientHeader:stPackageHeader;clientRequest:ansiString);
+var
+  imageMsg,requestid,serverTime:ansistring;
+  Header:stPackageHeader;
+begin
+  //{requestid:"55409110.f112911990",timestamp:"112911990",bidnumber:"55409110",checkcode:"69f4edbc56a1d721555ab66d61601ff2",version:"1.0",request:{bidamount:88300}}
+  //{"response":{"responsecode":0,"responsemsg":"Success","data":{"prompt":"输入红色三角行数字图像校验码","type":"0","captchaImageToken":"1423850325","expression":""}},"requestid":"55409110.f112911990","servertime":"20190921112911"}
+  requestid:=midstr(clientRequest,12,21);
+  serverTime:=uFuncs.getDateTimeString(now(),1);
+  serverTime:=leftStr(serverTime,length(serverTime)-3);
+  imageMsg:='{"response":{"responsecode":0,"responsemsg":"Success","data":{"prompt":"输入红色三角行数字图像校验码","type":"0","captchaImageToken":"1423850325","expression":""}},"requestid":'+requestid+',"servertime":"'+servertime+'"}';
+  fMain.memoInfo.Lines.Add(imageMsg);
+  Log(imageMsg);
+  imageMsg:=flash.CryptData(imageMsg);
+  Log(imageMsg);
+  copyMemory(@Header,@clientHeader,sizeof(stPackageHeader));
+  header.ordHigh:=2;
+  header.ordLow:=1;
+  header.dwSize:=sizeof(stPackageHeader)+length(imageMsg);
+  header.dwDataSize:=length(imageMsg);
+  header.dwSize:=uFuncs.convertInt(header.dwSize);
+  header.dwDataSize:=uFuncs.convertInt(header.dwDataSize);
+  socket.SendBuf(header,sizeof(header));
+  socket.SendBuf(imageMsg[1],length(imageMsg));
+end;
+procedure tDM.SendCrossFile(socket:TCustomWinSocket);
+var
+  fs:tFileStream;
+begin
+  fs:=tFileStream.Create(uConfig.crossfile, fmOpenRead or fmShareExclusive);
+  fs.Position:=0;
+  //socket.SendStream(mm);
+  if not socket.SendStream(fs) then fs.Free;
+end;
+procedure tDM.SendTimeData(socket:TCustomWinSocket;clientHeader:stPackageHeader);
+var
+  timePriceS:ansistring;
+  Header:stPackageHeader;
+begin
+  timePriceS:=getTimePrice();
+  //fMain.memoInfo.Lines.Add(timePriceS);
+  //Log(timePriceS);
+  timePriceS:=flash.CryptTimeData(timePriceS);
+  //fMain.memoInfo.Lines.Add(timePriceS);
+  //Log(timePriceS);
+  copyMemory(@Header,@clientHeader,sizeof(stPackageHeader));
+  header.ordHigh:=3;
+  header.ordLow:=1;
+  header.dwSize:=sizeof(stPackageHeader)+length(timePriceS);
+  header.dwDataSize:=length(timePriceS);
+  header.dwSize:=uFuncs.convertInt(header.dwSize);
+  header.dwDataSize:=uFuncs.convertInt(header.dwDataSize);
+  socket.SendBuf(header,sizeof(header));
+  socket.SendBuf(timePriceS[1],length(timePriceS));
+end;
+procedure tDM.SendConnectOK(socket:TCustomWinSocket;clientHeader:stPackageHeader;clientRequest:ansiString);
+var
+  clientRequestCrypted:ansiString;
+  requestid,responseData,serverTime:ansiString;
+  header:stPackageHeader;
+begin
+  try
+    //{requestid:"55409110.f101842294",timestamp:"101842294",bidnumber:"55409110",checkcode:"bf4764578c35d4b60860240372f3e29c",version:"1.0"}
+    //clientRequestCrypted:=flash.decryptData(clientRequest);
+    requestid:=midstr(clientRequestCrypted,12,21);
+    //{"response":{"responsecode":0,"responsemsg":"建立成功","data":{"informationtemplate":"","results":[]}},"requestid":"55409110.f101842294","servertime":"20190921101842"}
+    serverTime:=uFuncs.getDateTimeString(now(),1);
+    serverTime:=leftStr(serverTime,length(serverTime)-3);
+    responseData:='{"response":{"responsecode":0,"responsemsg":"建立成功","data":{"informationtemplate":"","results":[]}},"requestid":'+requestid+',"servertime":"'+serverTime+'"}';
+    fMain.memoInfo.Lines.Add(responseData);
+    Log(responseData);
+    responseData:=flash.cryptData(responseData);
+    copymemory(@header,@clientHeader,sizeof(stPackageHeader));
+    header.dwSize:=sizeof(stPackageHeader)+length(responsedata);
+    header.dwSize:=uFuncs.convertInt(header.dwSize);
+    //header.header[9]:=$36;
+    //header.header[10]:=$70;
+    //header.header[11]:=$f6;
+    //header.ordHigh:=1;
+    //header.ordLow:=1;
+    header.dwDataSize:=length(responsedata);
+    header.dwDataSize:=uFuncs.convertInt(header.dwDataSize);
+    socket.SendBuf(header,sizeof(header));
+    socket.SendBuf(responsedata[1],length(responsedata));
+
+  finally
+
+  end;
+end;
+function tDM.SendZero(socket:TCustomWinSocket):boolean;
+var
+  buf:byte;
+begin
+  buf:=0;
+  socket.SendBuf(buf,1);
+end;
+function tDM.SendText(socket:TCustomWinSocket;s:ansiString):boolean;
+begin
+  socket.SendText(s);
+  SendZero(socket);
+end;
+function getPolicyInfo():ansiString;
+var
+  ss:tstrings;
+begin
+  ss:=tstringlist.Create;
+  ss.LoadFromFile(uConfig.policyfile);
+  result:=ss.Text;
+  ss.Free;
+end;
+procedure initTimePrice;
+begin
+  zeromemory(@timePrice,sizeof(timePrice));
+  timePrice.curTime:='';
+  timePrice.curType:=CON_CUR_TYPE;
+  timePrice.auctionType:=CON_auctionType;
+  timePrice.auctionDate:=CON_auctionDate;
+  timePrice.quota:=CON_quota;
+  timePrice.numberOfBidUsers:=CON_numberOfBidUsers;
+  timePrice.priceLowerLimit:=CON_priceLowerLimit;
+  timePrice.startTime:=CON_startTime;
+  timePrice.updateTime:=CON_updateTime;
+  timePrice.endTime:=CON_endTime;
+  timePrice.tradeSn:=CON_tradeSn;
+  timePrice.queueLength:=CON_queueLength;
+  timePrice.basePriceTime:=CON_basePriceTime;
+
+  zeromemory(@timePriceData,sizeof(timePriceData));
+  timePriceData.dwSize:=sizeof(timePriceData);
+  copymemory(@timePriceData.header[0],@CON_header[0],sizeof(CON_header));
+  //timePriceData.header:=CON_header;
+  timePriceData.dwDataSize:=sizeof(stTimePrice);
+  timePriceData.ordHigh:=3;
+  timePriceData.ordLow:=1;
+
+end;
+function getTimePrice():ansiString;
+var
+  dt:tDateTime;
+  sec:integer;
+  curPrice,dataBaseLow,dataBaseHigh:integer;
+begin
+  dt:=now();
+  copymemory(@timePrice.curTime[0],pansichar(uFuncs.getDateTimeString(dt,'yyyymmddhhnnss')),length(timePrice.curTime));
+  //timePrice.curTime:=pansichar(uFuncs.getDateTimeString(dt,'yyyymmddhhnnss'));//20190921112945
+  copymemory(@timePrice.auctionDate[0],pansichar(uFuncs.getDateTimeString(dt,'yyyymmdd')),length(timePrice.auctionDate));
+  //timePrice.auctionDate:=uFuncs.getDateTimeString(dt,'yyyymmdd');//20190921
+  copymemory(@timePrice.systemTime[0],pansichar(uFuncs.getDateTimeString(dt,'hhnnss')),length(timePrice.systemTime));
+  //timePrice.systemTime:=uFuncs.getDateTimeString(dt,'hhnnss');//112946
+  sec:=strtoint(uFuncs.getDateTimeString(dt,'ss'));
+  curPrice:=sec*100+strtoint(CON_basePrice);
+  dataBaseLow:=curPrice-300;
+  dataBaseHigh:=curPrice+300;
+  //timePrice.basePrice:=inttostr(curPrice);
+  copymemory(@timePrice.basePrice[0],pansichar(ansiString(inttostr(curPrice))),length(timePrice.basePrice));
+  //timePrice.dataBaseLow:=inttostr(dataBaseLow);
+  copymemory(@timePrice.dataBaseLow[0],pansichar(ansiString(inttostr(dataBaseLow))),length(timePrice.dataBaseLow));
+  //timePrice.dataBaseHigh:=inttostr(dataBaseHigh);
+  copymemory(@timePrice.dataBaseHigh[0],pansichar(ansiString(inttostr(dataBaseHigh))),length(timePrice.dataBaseHigh));
+
+  result:=timePrice.curTime+','+timePrice.curType+','+timePrice.auctionType+','+timePrice.auctionDate+','+
+    timePrice.quota+','+timePrice.numberOfBidUsers+','+timePrice.priceLowerLimit+','+timePrice.startTime+','+
+    timePrice.updateTime+','+timePrice.endTime+','+timePrice.systemTime+','+timePrice.basePrice+','+
+    timePrice.basePriceTime+','+timePrice.dataBaseLow+','+timePrice.dataBaseHigh+','+timePrice.tradeSn+','+timePrice.queueLength;
+
+end;
+procedure TDM.DataModuleCreate(Sender: TObject);
+begin
+  //IdSNTP1.Host:='time.windows.com';
+  //IdSNTP1.SyncTime ;
+  initTimePrice;
+  flash:=tFlash.Create(uConfig.swfFileName);
+  if ss1.Active=false then ss1.Open;
+  if ss2.Active=false then ss2.Open;
+end;
+
+procedure TDM.DataModuleDestroy(Sender: TObject);
+begin
+  flash.Destroy;
+end;
+
+procedure TDM.ss1ClientConnect(Sender: TObject;
+  Socket: TCustomWinSocket);
+var
+  s:string;
+begin
+  s:=socket.RemoteAddress;
+  fMain.memoInfo.Lines.Add(uFuncs.getDateTimeString(now(),0));
+  fMain.memoInfo.Lines.Add('8300 connect:'+s);
+
+end;
+
+procedure TDM.ss1ClientRead(Sender: TObject; Socket: TCustomWinSocket);
+var
+  len:DWORD;
+  P:pointer;
+  header:stPackageHeader;
+  data,decryptdata:ansiString;
+begin
+  len:=socket.ReceiveLength;
+  //if len=16 then
+  //begin
+  //  data:=socket.ReceiveText;
+  //  fmain.memoInfo.Lines.Add(data);
+  //  Log(data);
+  //  exit;
+  //end;
+  if(len=sizeof(stPackageHeader))then
+  begin
+    socket.ReceiveBuf(mHeader,len);
+    bHeader:=true;
+    exit;
+  end;
+  //if(len<sizeof(stPackageHeader)+4)then exit;
+  getmem(p,len);
+  socket.ReceiveBuf(p^,len);
+  //uHookData.SaveFile('clientread(8300)',p^,len);
+  if(bHeader)then
+  begin
+    header:=mHeader;
+    setLength(data,mheader.dwDataSize);
+    copymemory(@data[1],p,mheader.dwDataSize);
+    Log('ss1ClientRead:'+data);
+    decryptdata:=flash.decryptData(data);
+    Log('ss1ClientRead:'+decryptdata);
+    fmain.memoInfo.Lines.Add('---------------------------------------');
+    fmain.memoInfo.Lines.Add(data);
+    fmain.memoInfo.Lines.Add(decryptdata);
+    bHeader:=false;
+    exit;
+  end;
+  copymemory(@header,p,sizeof(stPackageHeader));
+  header.dwSize:=uFuncs.convertInt(header.dwSize);
+  header.dwDataSize:=uFuncs.convertInt(header.dwDataSize);
+  setLength(data,header.dwDataSize);
+  copymemory(@data[1],pointer(DWORD(p)+sizeof(stPackageHeader)),header.dwDataSize);
+  Log('ss1ClientRead:'+data);
+  decryptdata:=flash.decryptData(data);
+  Log('ss1ClientRead:'+decryptdata);
+
+  if(header.ordHigh=1)and(header.ordLow=1)then  //发送连接成功信息
+  begin
+    SendConnectOK(socket,header,decryptdata);
+    copymemory(@mheader,@header,sizeof(stPackageHeader));
+    timer1.Enabled:=true;
+  end;
+  if(header.ordHigh=2)and(header.ordLow=1)then  //请求校验码2-1
+  begin
+    fmain.memoInfo.Lines.Add('请求校验码2-1');
+    fmain.memoInfo.Lines.Add(decryptdata);
+    SendImageMsg(socket,header,decryptdata);
+  end;
+  if(header.ordHigh=2)and(header.ordLow=4)then  //请求验证码下载2-4
+  begin
+    fmain.memoInfo.Lines.Add('请求验证码下载2-4');
+    fmain.memoInfo.Lines.Add(decryptdata);
+    SendImage(socket,header,decryptdata);
+  end;
+  if(header.ordHigh=2)and(header.ordLow=2)then  //请求进入队列2-2
+  begin
+    fmain.memoInfo.Lines.Add('请求进入队列2-2');
+    fmain.memoInfo.Lines.Add(data);
+    fmain.memoInfo.Lines.Add(decryptdata);
+  end;
+  freemem(p);
+end;
+
+procedure TDM.ss2ClientConnect(Sender: TObject; Socket: TCustomWinSocket);
+begin
+  fMain.memoInfo.Lines.Add(uFuncs.getDateTimeString(now(),0));
+  fMain.memoInfo.Lines.Add('843 connect:'+socket.RemoteAddress);
+end;
+
+procedure TDM.ss2ClientRead(Sender: TObject; Socket: TCustomWinSocket);
+begin
+  fMain.memoInfo.Lines.Add(uFuncs.getDateTimeString(now(),0));
+  fMain.memoInfo.Lines.Add('843 read:'+socket.ReceiveText);
+  //SendText(Socket,getPolicyInfo());
+  SendCrossFile(socket);
+end;
+procedure test();
+var
+  mm:TmemoryStream;
+begin
+  mm:=tMemoryStream.Create;
+  mm.LoadFromFile(uConfig.dataDir+'\59-44(126).dat');
+  mm.Position:=0;
+  dm.ss1.Socket.Connections[0].SendStream(mm);
+  //mm.Free;
+end;
+procedure TDM.Timer1Timer(Sender: TObject);
+
+begin
+  if ss1.Socket.ActiveConnections=0 then exit;
+  SendTimeData(ss1.Socket.Connections[0],mHeader);
+  //test();
+  //timePriceS:=getTimePrice();
+  //fMain.memoInfo.Lines.Add(timePriceS);
+  //Log(timePriceS);
+  //timePriceS:=flash.CrptTimeData(timePriceS);
+  //fMain.memoInfo.Lines.Add(timePriceS);
+  //Log(timePriceS);
+  //copyMemory(@timePriceData.timePrice[0],pansichar(timePriceS),length(timePriceS));
+  //ss1.Socket.Connections[0].SendBuf(timePriceData,sizeof(timePriceData));
+end;
+
+end.

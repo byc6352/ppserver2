@@ -1,0 +1,51 @@
+unit uFuncs;
+
+interface
+uses
+   System.SysUtils,windows;
+   function getDateTimeString(dt:tdatetime;formatType:ansiString):ansiString;overload;
+   function getDateTimeString(dt:tdatetime;formatType:integer):ansiString;overload;
+   function convertInt(i:integer):integer;
+implementation
+function convertInt(i:integer):integer;
+var
+  b1,b2:array[0..3] of byte;
+begin
+  move(i,b1,4);
+  b2[0]:=b1[3];
+  b2[1]:=b1[2];
+  b2[2]:=b1[1];
+  b2[3]:=b1[0];
+  move(b2,result,4);
+end;
+function getDateTimeString(dt:tdatetime;formatType:ansiString):ansiString;
+const
+  TIME_STR='yyyy-mm-dd hh:nn:ss';
+  FILE_STR='yyyymmddhhnnsszzz';
+begin
+try
+  result:=FormatDateTime(formatType,dt);
+finally
+
+end;
+end;
+function getDateTimeString(dt:tdatetime;formatType:integer):ansiString;
+const
+  TIME_STR='yyyy-mm-dd hh:nn:ss';
+  FILE_STR='yyyymmddhhnnsszzz';
+  TIME_FORMAT=0;
+  FILE_FORMAT=1;
+var
+  s:ansiString;
+begin
+  s:='';
+try
+  if formatType=TIME_FORMAT then
+    s:=FormatDateTime(TIME_STR,dt);
+  if formatType=FILE_FORMAT then
+    s:=FormatDateTime(FILE_STR,dt);
+finally
+  result:=s;
+end;
+end;
+end.

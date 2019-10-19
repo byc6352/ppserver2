@@ -1,0 +1,19 @@
+program ppServer;
+
+uses
+  Vcl.Forms,
+  uMain in 'uMain.pas' {fMain},
+  uDM in 'uDM.pas' {DM: TDataModule},
+  uFuncs in 'uFuncs.pas',
+  uHook in 'uHook.pas',
+  uHookData in 'uHookData.pas';
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.MainFormOnTaskbar := True;
+  Application.CreateForm(TfMain, fMain);
+  Application.CreateForm(TDM, DM);
+  Application.Run;
+end.

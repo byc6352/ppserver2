@@ -1,0 +1,35 @@
+unit uConfig;
+
+interface
+uses
+  Vcl.Forms,System.SysUtils;
+const
+  WORK_DIR:ansiString='ppserver'; // 工作目录
+  DATA_DIR:ansiString='data'; // 数据目录
+  LOG_NAME:ansiString='ppserverLog.txt';
+  SWF_NAME:ansiString='crpt.swf';
+
+var
+  workdir,dataDir:ansiString;//工作目录
+  webdir,logfile:ansiString;// 保存网页的子目录
+  swfFileName:ansiString;//xml配置参数文件
+  isInit:boolean=false;
+  procedure init();
+implementation
+
+procedure init();
+var
+    me:String;
+begin
+  isInit:=true;
+  me:=application.ExeName;
+  workdir:=extractfiledir(me)+'\'+WORK_DIR;
+  if(not DirectoryExists(workdir))then ForceDirectories(workdir);
+  dataDir:=workdir+'\'+WORK_DIR;
+  if(not DirectoryExists(dataDir))then ForceDirectories(dataDir);
+  logfile:=dataDir+'\'+LOG_NAME;
+  swfFileName:=workdir+'\'+SWF_NAME;;
+end;
+begin
+  init();
+end.
