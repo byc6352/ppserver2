@@ -80,6 +80,8 @@ type
     { Private declarations }
     mHeader:stPackageHeader;
     bHeader:boolean;
+    mYzCodeIndex:integer;
+    mYzCodeMsg:tstrings;
     procedure SendCrossFile(socket:TCustomWinSocket);
     function VerifyPackageHeader(pHeader:PPackageHeader):boolean;           //数据包校验；
   public
@@ -91,6 +93,8 @@ type
     procedure SendTimeData(socket:TCustomWinSocket;clientHeader:stPackageHeader);
     procedure SendImageMsg(socket:TCustomWinSocket;clientHeader:stPackageHeader;clientRequest:ansiString);
     procedure SendImage(socket:TCustomWinSocket;clientHeader:stPackageHeader;clientRequest:ansiString);
+    function getYzCodeMsg():ansiString;
+    function getYzCodeFile():ansiString;
   end;
 
 var
@@ -108,6 +112,17 @@ implementation
 {$R *.dfm}
 uses
   uMain,uFuncs,uLog,uHookdata,System.json,strutils;
+
+function tDM.getYzCodeMsg():ansiString;
+begin
+  result:=myzcodemsg[mYzcodeIndex];
+end;
+function tDM.getYzCodeFile():ansiString;
+begin
+  result:=uConfig.workdir+'\'+myzcodemsg[mYzcodeIndex+1];
+  mYzcodeIndex:=mYzcodeIndex+2;
+  if(mYzcodeIndex>=myzcodemsg.Count)then mYzcodeIndex:=0;
+end;
 function tDM.VerifyPackageHeader(pHeader:PPackageHeader):boolean;           //数据包校验；
 var
   dwSize,dwDataSize:DWORD;
@@ -162,7 +177,8 @@ try
   Log(referenceId);
   referenceId:=flash.CryptData(referenceId);
   Log(referenceId);
-  fs:=tFileStream.Create(uConfig.yzcodeFile, fmOpenRead or fmShareExclusive);
+  //fs:=tFileStream.Create(uConfig.yzcodeFile, fmOpenRead or fmShareExclusive);
+  fs:=tFileStream.Create(getyzcodeFile(), fmOpenRead or fmShareExclusive);
   fs.Position:=0;
   copyMemory(@Header,@clientHeader,sizeof(stPackageHeader));
   header.ordHigh:=4;
@@ -188,7 +204,7 @@ begin
   requestid:=midstr(clientRequest,12,21);
   serverTime:=uFuncs.getDateTimeString(now(),1);
   serverTime:=leftStr(serverTime,length(serverTime)-3);
-  imageMsg:='{"response":{"responsecode":0,"responsemsg":"Success","data":{"prompt":"输入红色三角行数字图像校验码","type":"0","captchaImageToken":"1423850325","expression":""}},"requestid":'+requestid+',"servertime":"'+servertime+'"}';
+  imageMsg:='{"response":{"responsecode":0,"responsemsg":"Success","data":'+getYzcodeMsg()+'},"requestid":'+requestid+',"servertime":"'+servertime+'"}';
   fMain.memoInfo.Lines.Add(imageMsg);
   Log(imageMsg);
   imageMsg:=flash.CryptData(imageMsg);
@@ -352,6 +368,8 @@ begin
   flash:=tFlash.Create(uConfig.swfFileName);
   if ss1.Active=false then ss1.Open;
   if ss2.Active=false then ss2.Open;
+  myzcodemsg:=tstringlist.Create;
+  myzcodemsg.LoadFromFile(uConfig.yzcodeMsgfile);
 end;
 
 procedure TDM.DataModuleDestroy(Sender: TObject);

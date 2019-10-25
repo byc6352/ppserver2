@@ -1,0 +1,4 @@
+{"prompt":"输入红色三角行数字图像校验码","type":"0","captchaImageToken":"1423850325","expression":""}
+yzcode.png
+{"prompt":"请输入“三角形”对应的下方数字","type":"0","captchaImageToken":"1477683772","expression":"c"}
+yzcode1.png

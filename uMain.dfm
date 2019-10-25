@@ -37,7 +37,7 @@ object fMain: TfMain
     Top = 41
     Width = 1049
     Height = 768
-    ActivePage = tsData
+    ActivePage = tsInfo
     Align = alClient
     TabOrder = 1
     object tsInfo: TTabSheet

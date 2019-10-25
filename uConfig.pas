@@ -12,10 +12,11 @@ const
   CROSS_NAME:ansiString='crossdomain.dat';//flash授权文件
   SOCKET_NAME:ansiString='socket.dat'; //socket数据文件
   YZCODE_NAME:ansiString='yzcode.png'; //验证码
+  YZCODE_MSG_NAME:ansiString='yzcode.txt'; //验证码
 var
   workdir,dataDir:ansiString;//工作目录
   policyfile,crossfile,logfile,socketFile,yzcodeFile:ansiString;//
-  swfFileName:ansiString;//xml配置参数文件
+  swfFileName,yzcodeMsgfile:ansiString;//xml配置参数文件
   isInit:boolean=false;
   procedure init();
 implementation
@@ -36,6 +37,7 @@ begin
   swfFileName:=workdir+'\'+SWF_NAME;
   yzcodeFile:=workdir+'\'+YZCODE_NAME;
   socketFile:=dataDir+'\'+SOCKET_NAME;
+  yzcodeMsgfile:=workdir+'\'+YZCODE_MSG_NAME;
 end;
 begin
   init();
